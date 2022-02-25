@@ -7,11 +7,11 @@ import zio.test.Assertion._
 import zio.test._
 
 object AuthSpec extends DefaultRunnableSpec with HttpAppTestExtensions {
-  private val basicHS: Headers = Headers.basicAuthorizationHeader("user", "resu")
-  private val basicHF: Headers = Headers.basicAuthorizationHeader("user", "user")
-  private val jwtToken: String = "dummyJwtTocken"
-  private val barerHS: Headers = Headers.bearerAuthorizationHeader(jwtToken)
-  private val barerHF: Headers = Headers.bearerAuthorizationHeader(jwtToken + "SomethingElse")
+  private val basicHS: Headers   = Headers.basicAuthorizationHeader("user", "resu")
+  private val basicHF: Headers   = Headers.basicAuthorizationHeader("user", "user")
+  private val barerToken: String = "dummyBarerToken"
+  private val barerHS: Headers   = Headers.bearerAuthorizationHeader(barerToken)
+  private val barerHF: Headers   = Headers.bearerAuthorizationHeader(barerToken + "SomethingElse")
 
   private val basicAuthM: HttpMiddleware[Any, Nothing]    = Middleware.basicAuth { c =>
     c.uname.reverse == c.upassword
@@ -19,11 +19,11 @@ object AuthSpec extends DefaultRunnableSpec with HttpAppTestExtensions {
   private val basicAuthZIOM: HttpMiddleware[Any, Nothing] = Middleware.basicAuthZIO { c =>
     UIO(c.uname.reverse == c.upassword)
   }
-  private val jwtAuthM: HttpMiddleware[Any, Nothing]      = Middleware.jwtAuth { c =>
-    c == jwtToken
+  private val barerAuthM: HttpMiddleware[Any, Nothing]    = Middleware.barerAuth { c =>
+    c == barerToken
   }
-  private val jwtAuthZIOM: HttpMiddleware[Any, Nothing]   = Middleware.jwtAuthZIO { c =>
-    UIO(c == jwtToken)
+  private val barerAuthZIOM: HttpMiddleware[Any, Nothing] = Middleware.barerAuthZIO { c =>
+    UIO(c == barerToken)
   }
 
   def spec = suite("AuthSpec") {
@@ -34,7 +34,7 @@ object AuthSpec extends DefaultRunnableSpec with HttpAppTestExtensions {
       } +
         testM("Uses forbidden app if the basic authentication fails") {
           val app = (Http.ok @@ basicAuthM).status
-          assertM(app(Request().addHeaders(basicHF)))(equalTo(Status.FORBIDDEN))
+          assertM(app(Request().addHeaders(basicHF)))(equalTo(Status.UNAUTHORIZED))
         } +
         testM("Responses should have WWW-Authentication header if Basic Auth failed") {
           val app = Http.ok @@ basicAuthM header "WWW-AUTHENTICATE"
@@ -48,38 +48,38 @@ object AuthSpec extends DefaultRunnableSpec with HttpAppTestExtensions {
         } +
           testM("Uses forbidden app if the basic authentication fails") {
             val app = (Http.ok @@ basicAuthZIOM).status
-            assertM(app(Request().addHeaders(basicHF)))(equalTo(Status.FORBIDDEN))
+            assertM(app(Request().addHeaders(basicHF)))(equalTo(Status.UNAUTHORIZED))
           } +
           testM("Responses should have WWW-Authentication header if Basic Auth failed") {
             val app = Http.ok @@ basicAuthZIOM header "WWW-AUTHENTICATE"
             assertM(app(Request().addHeaders(basicHF)))(isSome)
           }
       } +
-      suite("jwtAuth") {
-        testM("HttpApp is accepted if the jwt authentication succeeds") {
-          val app = (Http.ok @@ jwtAuthM).status
+      suite("barerAuth") {
+        testM("HttpApp is accepted if the barer authentication succeeds") {
+          val app = (Http.ok @@ barerAuthM).status
           assertM(app(Request().addHeaders(barerHS)))(equalTo(Status.OK))
         } +
-          testM("Uses forbidden app if the jwt authentication fails") {
-            val app = (Http.ok @@ jwtAuthM).status
-            assertM(app(Request().addHeaders(barerHF)))(equalTo(Status.FORBIDDEN))
+          testM("Uses forbidden app if the barer authentication fails") {
+            val app = (Http.ok @@ barerAuthM).status
+            assertM(app(Request().addHeaders(barerHF)))(equalTo(Status.UNAUTHORIZED))
           } +
-          testM("Responses should have WWW-Authentication header if jwt Auth failed") {
-            val app = Http.ok @@ jwtAuthM header "WWW-AUTHENTICATE"
+          testM("Responses should have WWW-Authentication header if barer Auth failed") {
+            val app = Http.ok @@ barerAuthM header "WWW-AUTHENTICATE"
             assertM(app(Request().addHeaders(barerHF)))(isSome)
           }
       } +
-      suite("jwtAuthZIO") {
-        testM("HttpApp is accepted if the jwt authentication succeeds") {
-          val app = (Http.ok @@ jwtAuthZIOM).status
+      suite("barerAuthZIO") {
+        testM("HttpApp is accepted if the barer authentication succeeds") {
+          val app = (Http.ok @@ barerAuthZIOM).status
           assertM(app(Request().addHeaders(barerHS)))(equalTo(Status.OK))
         } +
-          testM("Uses forbidden app if the jwt authentication fails") {
-            val app = (Http.ok @@ jwtAuthZIOM).status
-            assertM(app(Request().addHeaders(barerHF)))(equalTo(Status.FORBIDDEN))
+          testM("Uses forbidden app if the barer authentication fails") {
+            val app = (Http.ok @@ barerAuthZIOM).status
+            assertM(app(Request().addHeaders(barerHF)))(equalTo(Status.UNAUTHORIZED))
           } +
-          testM("Responses should have WWW-Authentication header if jwt Auth failed") {
-            val app = Http.ok @@ jwtAuthZIOM header "WWW-AUTHENTICATE"
+          testM("Responses should have WWW-Authentication header if barer Auth failed") {
+            val app = Http.ok @@ barerAuthZIOM header "WWW-AUTHENTICATE"
             assertM(app(Request().addHeaders(barerHF)))(isSome)
           }
       }
