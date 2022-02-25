@@ -4,6 +4,7 @@ import zhttp.html._
 import zhttp.http._
 import zhttp.internal.{DynamicServer, HttpGen, HttpRunnableSpec}
 import zhttp.service.server._
+import zhttp.service.server.content.compression.CompressionOptions.{deflate, gzip}
 import zio.duration.durationInt
 import zio.stream.{ZStream, ZTransducer}
 import zio.test.Assertion._
@@ -35,7 +36,10 @@ object ServerSpec extends HttpRunnableSpec {
     case _ -> !! / "HExitFailure" => HExit.fail(new RuntimeException("FAILURE"))
   }
 
-  private val app = serve(nonZIO ++ staticApp ++ DynamicServer.app, Some(Server.requestDecompression(true)))
+  val server: Server[Any, Nothing] =
+    Server.requestDecompression(true) ++ Server.responseCompression(0, IndexedSeq(gzip, deflate))
+
+  private val app = serve(nonZIO ++ staticApp ++ DynamicServer.app, Some(server))
 
   def dynamicAppSpec = suite("DynamicAppSpec") {
     suite("success") {
@@ -138,6 +142,28 @@ object ServerSpec extends HttpRunnableSpec {
             } yield response
             assertM(res.flatMap(_.bodyAsString))(equalTo(content))
           }
+      } +
+      suite("compression") {
+        val app = Http.text("some-text").deploy
+        testM("gzip") {
+          val res = app
+            .run(headers = Headers.acceptEncoding(HeaderValues.gzipDeflate))
+            .flatMap { response => response.body }
+            .flatMap { body =>
+              ZStream.fromChunk(body).transduce(ZTransducer.gunzip()).runCollect
+            }
+
+          assertM(res.map(chunk => new String(chunk.toArray)))(equalTo("some-text"))
+        } + testM("deflate") {
+          val res = app
+            .run(headers = Headers.acceptEncoding(HeaderValues.deflate))
+            .flatMap { response => response.body }
+            .flatMap { body =>
+              ZStream.fromChunk(body).transduce(ZTransducer.inflate()).runCollect
+            }
+
+          assertM(res.map(chunk => new String(chunk.toArray)))(equalTo("some-text"))
+        }
       }
   }
 

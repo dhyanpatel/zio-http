@@ -7,6 +7,7 @@ import zhttp.http.Http._
 import zhttp.http.{Http, HttpApp}
 import zhttp.service.server.ServerSSLHandler._
 import zhttp.service.server._
+import zhttp.service.server.content.compression.CompressionOptions
 import zio.{ZManaged, _}
 
 import java.net.{InetAddress, InetSocketAddress}
@@ -19,19 +20,21 @@ sealed trait Server[-R, +E] { self =>
     Concat(self, other)
 
   private def settings[R1 <: R, E1 >: E](s: Config[R1, E1] = Config()): Config[R1, E1] = self match {
-    case Concat(self, other)                   => other.settings(self.settings(s))
-    case LeakDetection(level)                  => s.copy(leakDetectionLevel = level)
-    case MaxRequestSize(size)                  => s.copy(maxRequestSize = size)
-    case Error(errorHandler)                   => s.copy(error = Some(errorHandler))
-    case Ssl(sslOption)                        => s.copy(sslOption = sslOption)
-    case App(app)                              => s.copy(app = app)
-    case Address(address)                      => s.copy(address = address)
-    case AcceptContinue(enabled)               => s.copy(acceptContinue = enabled)
-    case KeepAlive(enabled)                    => s.copy(keepAlive = enabled)
-    case FlowControl(enabled)                  => s.copy(flowControl = enabled)
-    case ConsolidateFlush(enabled)             => s.copy(consolidateFlush = enabled)
-    case UnsafeChannelPipeline(init)           => s.copy(channelInitializer = init)
-    case RequestDecompression(enabled, strict) => s.copy(requestDecompression = (enabled, strict))
+    case Concat(self, other)                                => other.settings(self.settings(s))
+    case LeakDetection(level)                               => s.copy(leakDetectionLevel = level)
+    case MaxRequestSize(size)                               => s.copy(maxRequestSize = size)
+    case Error(errorHandler)                                => s.copy(error = Some(errorHandler))
+    case Ssl(sslOption)                                     => s.copy(sslOption = sslOption)
+    case App(app)                                           => s.copy(app = app)
+    case Address(address)                                   => s.copy(address = address)
+    case AcceptContinue(enabled)                            => s.copy(acceptContinue = enabled)
+    case KeepAlive(enabled)                                 => s.copy(keepAlive = enabled)
+    case FlowControl(enabled)                               => s.copy(flowControl = enabled)
+    case ConsolidateFlush(enabled)                          => s.copy(consolidateFlush = enabled)
+    case UnsafeChannelPipeline(init)                        => s.copy(channelInitializer = init)
+    case RequestDecompression(enabled, strict)              => s.copy(requestDecompression = (enabled, strict))
+    case ResponseCompression(contentSizeThreshold, options) =>
+      s.copy(responseCompression = (contentSizeThreshold, options))
   }
 
   def make(implicit
@@ -138,6 +141,9 @@ sealed trait Server[-R, +E] { self =>
    */
   def withRequestDecompression(enabled: Boolean, strict: Boolean): Server[R, E] =
     Concat(self, RequestDecompression(enabled, strict))
+
+  def withResponseCompression(contentSizeThreshold: Int, options: IndexedSeq[CompressionOptions]): Server[R, E] =
+    Concat(self, ResponseCompression(contentSizeThreshold, options))
 }
 
 object Server {
@@ -156,6 +162,7 @@ object Server {
     flowControl: Boolean = true,
     channelInitializer: ChannelPipeline => Unit = null,
     requestDecompression: (Boolean, Boolean) = (false, false),
+    responseCompression: (Int, IndexedSeq[CompressionOptions]) = (0, IndexedSeq.empty),
   )
 
   /**
@@ -176,6 +183,8 @@ object Server {
   private final case class FlowControl(enabled: Boolean)                              extends UServer
   private final case class UnsafeChannelPipeline(init: ChannelPipeline => Unit)       extends UServer
   private final case class RequestDecompression(enabled: Boolean, strict: Boolean)    extends UServer
+  private final case class ResponseCompression(contentSizeThreshold: Int, options: IndexedSeq[CompressionOptions])
+      extends UServer
 
   def app[R, E](http: HttpApp[R, E]): Server[R, E]        = Server.App(http)
   def maxRequestSize(size: Int): UServer                  = Server.MaxRequestSize(size)
@@ -188,6 +197,8 @@ object Server {
   def ssl(sslOptions: ServerSSLOptions): UServer                                     = Server.Ssl(sslOptions)
   def acceptContinue: UServer                                                        = Server.AcceptContinue(true)
   def requestDecompression(strict: Boolean): UServer = Server.RequestDecompression(enabled = true, strict = strict)
+  def responseCompression(contentSizeThreshold: Int, options: IndexedSeq[CompressionOptions]): UServer =
+    Server.ResponseCompression(contentSizeThreshold, options)
   def unsafePipeline(pipeline: ChannelPipeline => Unit): UServer = UnsafeChannelPipeline(pipeline)
   val disableFlowControl: UServer                                = Server.FlowControl(false)
   val disableLeakDetection: UServer                              = LeakDetection(LeakDetectionLevel.DISABLED)
